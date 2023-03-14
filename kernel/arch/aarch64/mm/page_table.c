@@ -135,7 +135,18 @@ static int get_next_ptp(ptp_t *cur_ptp, u32 level, vaddr_t va, ptp_t **next_ptp,
                          * Hint: use get_pages to allocate a new page table page
                          *       set the attr `is_valid`, `is_table` and `next_table_addr` of new pte
                          */
-
+                        new_ptp = get_pages(0);
+                        new_pte_val.pte = 0;
+                        if(new_ptp != NULL) {
+                                memset(new_ptp, 0, sizeof(ptp_t));
+                                new_ptp_paddr = virt_to_phys(new_ptp);
+                                new_pte_val.table.is_valid = 1;
+                                new_pte_val.table.is_table = 1;
+                                new_pte_val.table.next_table_addr = (new_ptp_paddr >> PAGE_SHIFT);
+                                *entry = new_pte_val;
+                        } else {
+                                return -ENOMEM;
+                        }
                         /* LAB 2 TODO 3 END */
                 }
         }
@@ -210,7 +221,41 @@ int query_in_pgtbl(void *pgtbl, vaddr_t va, paddr_t *pa, pte_t **entry)
          * return the pa and pte until a L0/L1 block or page, return
          * `-ENOMAPPING` if the va is not mapped.
          */
+        ptp_t *ptp_l1, *ptp_l2, *ptp_l3, *ptp;
+        int retval;
 
+        retval = get_next_ptp(pgtbl, 0, va, &ptp_l1, entry, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        retval = get_next_ptp(ptp_l1, 1, va, &ptp_l2, entry, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        if(retval == BLOCK_PTP) {
+                *pa = virt_to_phys(ptp_l2) + GET_VA_OFFSET_L1(va);
+                return 0;
+        }
+
+        retval = get_next_ptp(ptp_l2, 2, va, &ptp_l3, entry, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        if(retval == BLOCK_PTP) {
+                *pa = virt_to_phys(ptp_l3) + GET_VA_OFFSET_L2(va);
+                return 0;
+        }
+
+        retval = get_next_ptp(ptp_l3, 3, va, &ptp, entry, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        *pa = virt_to_phys((ptp)) + GET_VA_OFFSET_L3(va);
+        return 0;
         /* LAB 2 TODO 3 END */
 }
 
@@ -224,7 +269,66 @@ int map_range_in_pgtbl(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
          * pte with the help of `set_pte_flags`. Iterate until all pages are
          * mapped.
          */
+        ptp_t *ptpl1, *ptpl2, *ptpl3;
+        pte_t *ptel0, *ptel1, *ptel2, *ptel3;
+        int retval, cursor, index;
 
+        retval = get_next_ptp(pgtbl, 0, va, &ptpl1, &ptel0, true);
+        if(retval < 0) {
+                return retval;
+        }
+
+        retval = get_next_ptp(ptpl1, 1, va, &ptpl2, &ptel1, true);
+        if(retval < 0) {
+                return retval;
+        }
+
+        retval = get_next_ptp(ptpl2, 2, va, &ptpl3, &ptel2, true);
+        if(retval < 0) {
+                return retval;
+        }
+
+        for (cursor = 0; cursor < len; cursor += PAGE_SIZE) {
+                index = GET_L3_INDEX((va + cursor));
+                ptel3 = &(ptpl3->ent[index]);
+
+                if(!IS_PTE_INVALID(ptel3->pte)) {
+                        kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
+                }
+
+                set_pte_flags(ptel3, flags, USER_PTE);
+                ptel3->l3_page.is_valid = 1;
+                ptel3->l3_page.is_page = 1;
+                ptel3->l3_page.pfn = ((pa + cursor) >> L3_INDEX_SHIFT);
+
+                if(index == PTP_ENTRIES - 1 && cursor + PAGE_SIZE < len) {
+                        index = GET_L2_INDEX((va + cursor));
+                        if(index == PTP_ENTRIES - 1) {
+                                index = GET_L1_INDEX((va + cursor));
+                                if(index == PTP_ENTRIES - 1) {
+                                        index = GET_L0_INDEX((va + cursor));
+                                        if(index == PTP_ENTRIES - 1) {
+                                                kinfo("The mapping exceeds the address space!");
+                                                return -ENOMEM;
+                                        }
+                                        retval = get_next_ptp(pgtbl, 0, va + cursor + PAGE_SIZE, &ptpl1, &ptel0, true);
+                                        if(retval < 0) {
+                                                return retval;
+                                        }
+                                }
+                                retval = get_next_ptp(ptpl1, 1, va + cursor + PAGE_SIZE, &ptpl2, &ptel1, true);
+                                if(retval < 0) {
+                                        return retval;
+                                }
+                        }
+                        retval = get_next_ptp(ptpl2, 2, va + cursor + PAGE_SIZE, &ptpl3, &ptel2, true);
+                        if(retval < 0) {
+                                return retval;
+                        }
+                }
+        }
+
+        return 0;
         /* LAB 2 TODO 3 END */
 }
 
@@ -236,7 +340,58 @@ int unmap_range_in_pgtbl(void *pgtbl, vaddr_t va, size_t len)
          * mark the final level pte as invalid. Iterate until all pages are
          * unmapped.
          */
+        ptp_t *ptpl1, *ptpl2, *ptpl3;
+        pte_t *ptel0, *ptel1, *ptel2, *ptel3;
+        int retval, cursor, index;
 
+        retval = get_next_ptp(pgtbl, 0, va, &ptpl1, &ptel0, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        retval = get_next_ptp(ptpl1, 1, va, &ptpl2, &ptel1, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        retval = get_next_ptp(ptpl2, 2, va, &ptpl3, &ptel2, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        for (cursor = 0; cursor < len; cursor += PAGE_SIZE) {
+                index = GET_L3_INDEX((va + cursor));
+                ptel3 = &(ptpl3->ent[index]);
+                ptel3->l3_page.is_valid = 0;
+
+                if(index == PTP_ENTRIES - 1 && cursor + PAGE_SIZE < len) {
+                        index = GET_L2_INDEX((va + cursor));
+                        if(index == PTP_ENTRIES - 1) {
+                                index = GET_L1_INDEX((va + cursor));
+                                if(index == PTP_ENTRIES - 1) {
+                                        index = GET_L0_INDEX((va + cursor));
+                                        if(index == PTP_ENTRIES - 1) {
+                                                kinfo("The unmapping exceeds the address space!");
+                                                return 0;
+                                        }
+                                        retval = get_next_ptp(pgtbl, 0, va + cursor + PAGE_SIZE, &ptpl1, &ptel0, false);
+                                        if(retval < 0) {
+                                                return retval;
+                                        }
+                                }
+                                retval = get_next_ptp(ptpl1, 1, va + cursor + PAGE_SIZE, &ptpl2, &ptel1, false);
+                                if(retval < 0) {
+                                        return retval;
+                                }
+                        }
+                        retval = get_next_ptp(ptpl2, 2, va + cursor + PAGE_SIZE, &ptpl3, &ptel2, false);
+                        if(retval < 0) {
+                                return retval;
+                        }
+                }
+        }
+
+        return 0;
         /* LAB 2 TODO 3 END */
 }
 
@@ -244,14 +399,235 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                             vmr_prop_t flags)
 {
         /* LAB 2 TODO 4 BEGIN */
+#define L1_PAGESIZE (1 << (L1_INDEX_SHIFT))
+#define L2_PAGESIZE (1 << (L2_INDEX_SHIFT))
 
+        ptp_t *ptpl1, *ptpl2, *ptpl3;
+        pte_t *ptel0, *ptel1, *ptel2, *ptel3;
+        int retval, cursor, index;
+
+        retval = get_next_ptp(pgtbl, 0, va, &ptpl1, &ptel0, true);
+        if(retval < 0) {
+                return retval;
+        }
+
+        for(cursor = 0; cursor + L1_PAGESIZE <= len; cursor += L1_PAGESIZE) {
+                index = GET_L1_INDEX((va + cursor));
+                ptel1 = &(ptpl1->ent[index]);
+
+                if(!IS_PTE_INVALID(ptel1->pte)) {
+                        kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
+                }
+
+                set_pte_flags(ptel1, flags, USER_PTE);
+                ptel1->l1_block.is_valid = 1;
+                ptel1->l1_block.is_table = 0;
+                ptel1->l1_block.pfn = ((pa + cursor) >> L1_INDEX_SHIFT);
+
+                if(index == PTP_ENTRIES - 1 && cursor + PAGE_SIZE < len) {
+                        index = GET_L0_INDEX((va + cursor));
+                        if(index == PTP_ENTRIES - 1) {
+                                kinfo("The mapping exceeds the address space!");
+                                return -ENOMEM;
+                        }
+                        retval = get_next_ptp(pgtbl, 0, va + cursor + L1_PAGESIZE, &ptpl1, &ptel0, true);
+                        if(retval < 0) {
+                                return retval;
+                        }
+                }
+        }
+
+        retval = get_next_ptp(ptpl1, 1, va + cursor, &ptpl2, &ptel1, true);
+        if(retval < 0) {
+                return retval;
+        }
+
+        for(; cursor + L2_PAGESIZE <= len; cursor += L2_PAGESIZE) {
+                index = GET_L2_INDEX((va + cursor));
+                ptel2 = &(ptpl2->ent[index]);
+
+                if(!IS_PTE_INVALID(ptel2->pte)) {
+                        kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
+                }
+
+                set_pte_flags(ptel2, flags, USER_PTE);
+                ptel2->l2_block.is_valid = 1;
+                ptel2->l2_block.is_table = 0;
+                ptel2->l2_block.pfn = ((pa + cursor) >> L2_INDEX_SHIFT);
+
+                if(index == PTP_ENTRIES - 1 && cursor + PAGE_SIZE < len) {
+                        index = GET_L1_INDEX((va + cursor));
+                        if(index == PTP_ENTRIES - 1) {
+                                index = GET_L0_INDEX((va + cursor));
+                                if(index == PTP_ENTRIES - 1) {
+                                        kinfo("The mapping exceeds the address space!");
+                                        return -ENOMEM;
+                                }
+                                retval = get_next_ptp(pgtbl, 0, va + cursor + L2_PAGESIZE, &ptpl1, &ptel0, true);
+                                if(retval < 0) {
+                                        return retval;
+                                }
+                        }
+                        retval = get_next_ptp(ptpl1, 1, va + cursor + L2_PAGESIZE, &ptpl2, &ptel1, true);
+                        if(retval < 0) {
+                                return retval;
+                        }
+                }
+        }
+
+        retval = get_next_ptp(ptpl2, 2, va + cursor, &ptpl3, &ptel2, true);
+        if(retval < 0) {
+                return retval;
+        }
+
+        for(; cursor < len; cursor += PAGE_SIZE) {
+                index = GET_L3_INDEX((va + cursor));
+                ptel3 = &(ptpl3->ent[index]);
+
+                if(!IS_PTE_INVALID(ptel3->pte)) {
+                        kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
+                }
+
+                set_pte_flags(ptel3, flags, USER_PTE);
+                ptel3->l3_page.is_valid = 1;
+                ptel3->l3_page.is_page = 1;
+                ptel3->l3_page.pfn = ((pa + cursor) >> L3_INDEX_SHIFT);
+
+                if(index == PTP_ENTRIES - 1 && cursor + PAGE_SIZE < len) {
+                        index = GET_L2_INDEX((va + cursor));
+                        if(index == PTP_ENTRIES - 1) {
+                                index = GET_L1_INDEX((va + cursor));
+                                if(index == PTP_ENTRIES - 1) {
+                                        index = GET_L0_INDEX((va + cursor));
+                                        if(index == PTP_ENTRIES - 1) {
+                                                kinfo("The mapping exceeds the address space!");
+                                                return -ENOMEM;
+                                        }
+                                        retval = get_next_ptp(pgtbl, 0, va + cursor + PAGE_SIZE, &ptpl1, &ptel0, true);
+                                        if(retval < 0) {
+                                                return retval;
+                                        }
+                                }
+                                retval = get_next_ptp(ptpl1, 1, va + cursor + PAGE_SIZE, &ptpl2, &ptel1, true);
+                                if(retval < 0) {
+                                        return retval;
+                                }
+                        }
+                        retval = get_next_ptp(ptpl2, 2, va + cursor + PAGE_SIZE, &ptpl3, &ptel2, true);
+                        if(retval < 0) {
+                                return retval;
+                        }
+                }
+        }
+
+        return 0;
         /* LAB 2 TODO 4 END */
 }
 
 int unmap_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, size_t len)
 {
         /* LAB 2 TODO 4 BEGIN */
+#define L1_PAGESIZE (1 << (L1_INDEX_SHIFT))
+#define L2_PAGESIZE (1 << (L2_INDEX_SHIFT))
 
+        ptp_t *ptpl1, *ptpl2, *ptpl3;
+        pte_t *ptel0, *ptel1, *ptel2, *ptel3;
+        int retval, cursor, index;
+
+        retval = get_next_ptp(pgtbl, 0, va, &ptpl1, &ptel0, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        for(cursor = 0; cursor + L1_PAGESIZE <= len; cursor += L1_PAGESIZE) {
+                index = GET_L1_INDEX((va + cursor));
+                ptel1 = &(ptpl1->ent[index]);
+
+                ptel1->l1_block.is_valid = 0;
+
+                if(index == PTP_ENTRIES - 1 && cursor + PAGE_SIZE < len) {
+                        index = GET_L0_INDEX((va + cursor));
+                        if(index == PTP_ENTRIES - 1) {
+                                kinfo("The mapping exceeds the address space!");
+                                return -ENOMEM;
+                        }
+                        retval = get_next_ptp(pgtbl, 0, va + cursor + L1_PAGESIZE, &ptpl1, &ptel0, false);
+                        if(retval < 0) {
+                                return retval;
+                        }
+                }
+        }
+
+        retval = get_next_ptp(ptpl1, 1, va + cursor, &ptpl2, &ptel1, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        for(; cursor + L2_PAGESIZE <= len; cursor += L2_PAGESIZE) {
+                index = GET_L2_INDEX((va + cursor));
+                ptel2 = &(ptpl2->ent[index]);
+
+                ptel2->l2_block.is_valid = 0;
+
+                if(index == PTP_ENTRIES - 1 && cursor + PAGE_SIZE < len) {
+                        index = GET_L1_INDEX((va + cursor));
+                        if(index == PTP_ENTRIES - 1) {
+                                index = GET_L0_INDEX((va + cursor));
+                                if(index == PTP_ENTRIES - 1) {
+                                        kinfo("The mapping exceeds the address space!");
+                                        return -ENOMEM;
+                                }
+                                retval = get_next_ptp(pgtbl, 0, va + cursor + L2_PAGESIZE, &ptpl1, &ptel0, false);
+                                if(retval < 0) {
+                                        return retval;
+                                }
+                        }
+                        retval = get_next_ptp(ptpl1, 1, va + cursor + L2_PAGESIZE, &ptpl2, &ptel1, false);
+                        if(retval < 0) {
+                                return retval;
+                        }
+                }
+        }
+
+        retval = get_next_ptp(ptpl2, 2, va + cursor, &ptpl3, &ptel2, false);
+        if(retval < 0) {
+                return retval;
+        }
+
+        for(; cursor < len; cursor += PAGE_SIZE) {
+                index = GET_L3_INDEX((va + cursor));
+                ptel3 = &(ptpl3->ent[index]);
+
+                ptel3->l3_page.is_valid = 0;
+
+                if(index == PTP_ENTRIES - 1 && cursor + PAGE_SIZE < len) {
+                        index = GET_L2_INDEX((va + cursor));
+                        if(index == PTP_ENTRIES - 1) {
+                                index = GET_L1_INDEX((va + cursor));
+                                if(index == PTP_ENTRIES - 1) {
+                                        index = GET_L0_INDEX((va + cursor));
+                                        if(index == PTP_ENTRIES - 1) {
+                                                kinfo("The mapping exceeds the address space!");
+                                                return -ENOMEM;
+                                        }
+                                        retval = get_next_ptp(pgtbl, 0, va + cursor + PAGE_SIZE, &ptpl1, &ptel0, false);
+                                        if(retval < 0) {
+                                                return retval;
+                                        }
+                                }
+                                retval = get_next_ptp(ptpl1, 1, va + cursor + PAGE_SIZE, &ptpl2, &ptel1, false);
+                                if(retval < 0) {
+                                        return retval;
+                                }
+                        }
+                        retval = get_next_ptp(ptpl2, 2, va + cursor + PAGE_SIZE, &ptpl3, &ptel2, false);
+                        if(retval < 0) {
+                                return retval;
+                        }
+                }
+        }
+
+        return 0;
         /* LAB 2 TODO 4 END */
 }
 
