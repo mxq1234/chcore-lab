@@ -12,7 +12,7 @@
 
 #include "image.h"
 
-typedef unsigned long u64;
+typedef unsigned long long u64;
 typedef unsigned int u32;
 
 /* Physical memory address space: 0-1G */

@@ -6,7 +6,7 @@
 
 以4K粒度映射，每个页表页的大小是4K，因此一个页表页中最多包含4K / 8 = 512个页表项。0~4G的虚拟地址空间需要4G / 4K = 2^20^个L3页表项，需要 2^20^ / 512 = 2^11^个L3页表页，即需要2^11^=2048个L2页表项，需要2048 / 512 = 4个L2页表页，需要1个L1页表页和1个L0页表页。因此，总共需要1+1+4+2048=2054个页表页，大约占用8.02M的内存空间。
 
-以2M粒度映射，每个页表页的大小是4K，因此一个页表页中最多包含4K / 8 = 512个页表项。0~4G的虚拟地址空间需要4G / 2M = 2^11^个L2页表项，需要 2^11^ / 512 = 4个L2页表页，需要1个L1页表页和1个L0页表页。因此，总共需要1+1+4=6个页表页，大约占用24K的内存空间。
+以2M粒度映射，每个页表页的大小是4K，因此一个页表页中最多包含4K / 8 = 512个页表项。0~4G的虚拟地址空间需要4G / 2M = 2^11^个L2页表项，需要 2^11^ / 512 = 4个L2页表页，需要1个L1页表页和1个L0页表页。因此，总共需要1+1+4=6个页表页，占用24K的内存空间。
 
 ### 练习题2
 
@@ -22,11 +22,11 @@
 
 <img src="assets/lab2/2.png" />
 
-如果将为低地址配置页表的代码注释掉，再次运行，可以看到PC值为0x200，说明地址翻译发生了错误：
+如果将为低地址配置页表的代码注释掉，再次运行，程序将会卡住，说明发生了异常。按下Ctrl-C，PC值此时为0x200：
 
 <img src="assets/lab2/3.png" />
 
-用 `bt` 指令看一下栈，发现确实是在 `el1_mmu_activate` 函数中出错的，应该是开启VM后的下一行代码运行出错：
+用 `bt` 指令看一下栈，发现是在 `el1_mmu_activate` 函数中出错的，应该是启动MMU的下一行代码运行出错：
 
 <img src="assets/lab2/4.png" />
 
@@ -82,3 +82,86 @@ gdb的运行结果支持了上述的解释和猜测：
 
 ### 挑战题10
 
+在 `page_table.S` 中，仿照 `set_ttbr0_el1`，添加一个 `set_ttbr1_el1` 函数，以L0页表页的物理地址作为参数，设置 `ttbr1_el1` 寄存器。
+
+在 `page_table.c` 中，用 `extern` 声明 `set_ttbr1_el1` 函数。添加一个 `reset_el1_page_table` 函数，用来分配页表页、映射内核地址空间：
+
+``` c
+void reset_el1_page_table() {
+#define PHYSMEM_START   (0x0UL)
+#define PERIPHERAL_BASE (0x3F000000UL)
+#define PHYSMEM_END     (0x40000000UL)
+#define PHYSMEM_MAX     (0xFFFFFFFFUL)
+
+#define PTP_ENTRIES_NUM 512
+
+    void* pgtbl = get_pages(0);
+    memset(pgtbl, 0, sizeof(u64) * PTP_ENTRIES_NUM);
+    map_range_in_pgtbl(pgtbl, KBASE, PHYSMEM_START, PERIPHERAL_BASE - PHYSMEM_START, 0);
+    map_range_in_pgtbl(pgtbl, KBASE + PERIPHERAL_BASE, PERIPHERAL_BASE, PHYSMEM_END - PERIPHERAL_BASE, VMR_DEVICE);
+    map_range_in_pgtbl(pgtbl, KBASE + PHYSMEM_END, PHYSMEM_END, PHYSMEM_MAX - PHYSMEM_END, VMR_DEVICE);
+    set_ttbr1_el1(virt_to_phys(pgtbl));
+}
+```
+
+由于要配置的是内核的页表，所以我们需要新增一些和flags有关的宏定义，在 `page_table.c` 中：
+
+``` c
+#define USER_PTE 0
+#define KERNEL_PTE 1
+```
+
+在 `page_table.h` 中：
+
+``` c
+/* Read-write permission. */
+#define AARCH64_MMU_ATTR_PAGE_AP_HIGH_RW_EL0_NONE (0)
+#define AARCH64_MMU_ATTR_PAGE_AP_HIGH_RW_EL0_RW   (1)
+#define AARCH64_MMU_ATTR_PAGE_AP_HIGH_RO_EL0_NONE (2)
+#define AARCH64_MMU_ATTR_PAGE_AP_HIGH_RO_EL0_RO   (3)
+
+/* X: execution permission. U: unprivileged. P: privileged. */
+#define AARCH64_MMU_ATTR_PAGE_UX  (0)
+#define AARCH64_MMU_ATTR_PAGE_UXN (1)
+#define AARCH64_MMU_ATTR_PAGE_PX  (0)
+#define AARCH64_MMU_ATTR_PAGE_PXN (1)
+```
+
+修改 `page_table.c` 中的 `set_pte_flags` 函数，使其可以支持 `KERNEL_PTE`：
+
+``` c
+else if(kind == KERNEL_PTE) {
+    // EL1 can r/w kernel region and EL0 can do nothing.
+    entry->l3_page.AP = AARCH64_MMU_ATTR_PAGE_AP_HIGH_RW_EL0_NONE;
+    // EL0 cannot directly execute EL1 accessiable region.
+    entry->l3_page.UXN = AARCH64_MMU_ATTR_PAGE_UXN;
+    // EL1 can directly execute EL1 accessiable region.
+    entry->l3_page.PXN = AARCH64_MMU_ATTR_PAGE_PX;
+    // Set AF (access flag) in advance.
+    entry->l3_page.AF = AARCH64_MMU_ATTR_PAGE_AF_ACCESSED;
+    // Mark the mapping as not global
+    entry->l3_page.nG = 1;
+    // Mark the mappint as inner sharable
+    entry->l3_page.SH = INNER_SHAREABLE;
+    // Set the memory type
+    if (flags & VMR_DEVICE) {
+            entry->l3_page.attr_index = DEVICE_MEMORY;
+            entry->l3_page.SH = 0;
+    } else if (flags & VMR_NOCACHE) {
+            entry->l3_page.attr_index = NORMAL_MEMORY_NOCACHE;
+    } else {
+            entry->l3_page.attr_index = NORMAL_MEMORY;
+    }
+}
+```
+
+将所有用到 `set_pte_flags` 函数的地方改为：
+
+``` c
+set_pte_flags(pte, flags,
+((va + cursor < KBASE)? USER_PTE : KERNEL_PTE));
+```
+
+最后，在 `main.c` 中引入 `reset_el1_page_table` 函数，并在 `mm_init` 函数之后调用它。内核页表被重新配置，通过了之后对 `kmalloc` 和 `page_table` 的测试：
+
+<image src="assets/lab2/7.png" />

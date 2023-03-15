@@ -23,6 +23,7 @@
 #include <arch/mm/page_table.h>
 
 extern void set_ttbr0_el1(paddr_t);
+extern void set_ttbr1_el1(paddr_t);
 
 void set_page_table(paddr_t pgtbl)
 {
@@ -30,46 +31,97 @@ void set_page_table(paddr_t pgtbl)
 }
 
 #define USER_PTE 0
+#define KERNEL_PTE 1
+
+/*
+ * Reconfigure the el1 page table after starting kernel.
+ * Mapping with 4K pages.
+ */
+
+void reset_el1_page_table() {
+/* Physical memory address space: 0-1G */
+#define PHYSMEM_START   (0x0UL)
+#define PERIPHERAL_BASE (0x3F000000UL)
+#define PHYSMEM_END     (0x40000000UL)
+#define PHYSMEM_MAX     (0xFFFFFFFFUL)
+
+/* The number of entries in one page table page */
+#define PTP_ENTRIES_NUM 512
+
+        void* pgtbl = get_pages(0);
+        memset(pgtbl, 0, sizeof(u64) * PTP_ENTRIES_NUM);
+        map_range_in_pgtbl(pgtbl, KBASE, PHYSMEM_START, PERIPHERAL_BASE - PHYSMEM_START, 0);
+        map_range_in_pgtbl(pgtbl, KBASE + PERIPHERAL_BASE, PERIPHERAL_BASE, PHYSMEM_END - PERIPHERAL_BASE, VMR_DEVICE);
+        map_range_in_pgtbl(pgtbl, KBASE + PHYSMEM_END, PHYSMEM_END, PHYSMEM_MAX - PHYSMEM_END, VMR_DEVICE);
+        set_ttbr1_el1(virt_to_phys(pgtbl));
+}
+
 /*
  * the 3rd arg means the kind of PTE.
  */
 static int set_pte_flags(pte_t *entry, vmr_prop_t flags, int kind)
 {
         // Only consider USER PTE now.
-        BUG_ON(kind != USER_PTE);
+        // BUG_ON(kind != USER_PTE);
 
-        /*
-         * Current access permission (AP) setting:
-         * Mapped pages are always readable (No considering XOM).
-         * EL1 can directly access EL0 (No restriction like SMAP
-         * as ChCore is a microkernel).
-         */
-        if (flags & VMR_WRITE)
-                entry->l3_page.AP = AARCH64_MMU_ATTR_PAGE_AP_HIGH_RW_EL0_RW;
-        else
-                entry->l3_page.AP = AARCH64_MMU_ATTR_PAGE_AP_HIGH_RO_EL0_RO;
+        if(kind == USER_PTE) {
+                /*
+                * Current access permission (AP) setting:
+                * Mapped pages are always readable (No considering XOM).
+                * EL1 can directly access EL0 (No restriction like SMAP
+                * as ChCore is a microkernel).
+                */
+                if (flags & VMR_WRITE)
+                        entry->l3_page.AP = AARCH64_MMU_ATTR_PAGE_AP_HIGH_RW_EL0_RW;
+                else
+                        entry->l3_page.AP = AARCH64_MMU_ATTR_PAGE_AP_HIGH_RO_EL0_RO;
 
-        if (flags & VMR_EXEC)
-                entry->l3_page.UXN = AARCH64_MMU_ATTR_PAGE_UX;
-        else
+                if (flags & VMR_EXEC)
+                        entry->l3_page.UXN = AARCH64_MMU_ATTR_PAGE_UX;
+                else
+                        entry->l3_page.UXN = AARCH64_MMU_ATTR_PAGE_UXN;
+
+                // EL1 cannot directly execute EL0 accessiable region.
+                entry->l3_page.PXN = AARCH64_MMU_ATTR_PAGE_PXN;
+                // Set AF (access flag) in advance.
+                entry->l3_page.AF = AARCH64_MMU_ATTR_PAGE_AF_ACCESSED;
+                // Mark the mapping as not global
+                entry->l3_page.nG = 1;
+                // Mark the mappint as inner sharable
+                entry->l3_page.SH = INNER_SHAREABLE;
+                // Set the memory type
+                if (flags & VMR_DEVICE) {
+                        entry->l3_page.attr_index = DEVICE_MEMORY;
+                        entry->l3_page.SH = 0;
+                } else if (flags & VMR_NOCACHE) {
+                        entry->l3_page.attr_index = NORMAL_MEMORY_NOCACHE;
+                } else {
+                        entry->l3_page.attr_index = NORMAL_MEMORY;
+                }
+        } else if(kind == KERNEL_PTE) {
+                // EL1 can r/w kernel region and EL0 can do nothing.
+                entry->l3_page.AP = AARCH64_MMU_ATTR_PAGE_AP_HIGH_RW_EL0_NONE;
+                // EL0 cannot directly execute EL1 accessiable region.
                 entry->l3_page.UXN = AARCH64_MMU_ATTR_PAGE_UXN;
-
-        // EL1 cannot directly execute EL0 accessiable region.
-        entry->l3_page.PXN = AARCH64_MMU_ATTR_PAGE_PXN;
-        // Set AF (access flag) in advance.
-        entry->l3_page.AF = AARCH64_MMU_ATTR_PAGE_AF_ACCESSED;
-        // Mark the mapping as not global
-        entry->l3_page.nG = 1;
-        // Mark the mappint as inner sharable
-        entry->l3_page.SH = INNER_SHAREABLE;
-        // Set the memory type
-        if (flags & VMR_DEVICE) {
-                entry->l3_page.attr_index = DEVICE_MEMORY;
-                entry->l3_page.SH = 0;
-        } else if (flags & VMR_NOCACHE) {
-                entry->l3_page.attr_index = NORMAL_MEMORY_NOCACHE;
+                // EL1 can directly execute EL1 accessiable region.
+                entry->l3_page.PXN = AARCH64_MMU_ATTR_PAGE_PX;
+                // Set AF (access flag) in advance.
+                entry->l3_page.AF = AARCH64_MMU_ATTR_PAGE_AF_ACCESSED;
+                // Mark the mapping as not global
+                entry->l3_page.nG = 1;
+                // Mark the mappint as inner sharable
+                entry->l3_page.SH = INNER_SHAREABLE;
+                // Set the memory type
+                if (flags & VMR_DEVICE) {
+                        entry->l3_page.attr_index = DEVICE_MEMORY;
+                        entry->l3_page.SH = 0;
+                } else if (flags & VMR_NOCACHE) {
+                        entry->l3_page.attr_index = NORMAL_MEMORY_NOCACHE;
+                } else {
+                        entry->l3_page.attr_index = NORMAL_MEMORY;
+                }
         } else {
-                entry->l3_page.attr_index = NORMAL_MEMORY;
+                BUG("The PTE kind %d is not supported\n", kind);
         }
 
         return 0;
@@ -296,7 +348,7 @@ int map_range_in_pgtbl(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                         kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
                 }
 
-                set_pte_flags(ptel3, flags, USER_PTE);
+                set_pte_flags(ptel3, flags, ((va + cursor < KBASE)? USER_PTE : KERNEL_PTE));
                 ptel3->l3_page.is_valid = 1;
                 ptel3->l3_page.is_page = 1;
                 ptel3->l3_page.pfn = ((pa + cursor) >> L3_INDEX_SHIFT);
@@ -419,7 +471,7 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                         kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
                 }
 
-                set_pte_flags(ptel1, flags, USER_PTE);
+                set_pte_flags(ptel1, flags, ((va + cursor < KBASE)? USER_PTE : KERNEL_PTE));
                 ptel1->l1_block.is_valid = 1;
                 ptel1->l1_block.is_table = 0;
                 ptel1->l1_block.pfn = ((pa + cursor) >> L1_INDEX_SHIFT);
@@ -450,7 +502,7 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                         kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
                 }
 
-                set_pte_flags(ptel2, flags, USER_PTE);
+                set_pte_flags(ptel2, flags, ((va + cursor < KBASE)? USER_PTE : KERNEL_PTE));
                 ptel2->l2_block.is_valid = 1;
                 ptel2->l2_block.is_table = 0;
                 ptel2->l2_block.pfn = ((pa + cursor) >> L2_INDEX_SHIFT);
@@ -488,7 +540,7 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                         kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
                 }
 
-                set_pte_flags(ptel3, flags, USER_PTE);
+                set_pte_flags(ptel3, flags, ((va + cursor < KBASE)? USER_PTE : KERNEL_PTE));
                 ptel3->l3_page.is_valid = 1;
                 ptel3->l3_page.is_page = 1;
                 ptel3->l3_page.pfn = ((pa + cursor) >> L3_INDEX_SHIFT);
