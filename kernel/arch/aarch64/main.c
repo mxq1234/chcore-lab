@@ -23,6 +23,7 @@
 #include <machine.h>
 #include <irq/irq.h>
 #include <object/thread.h>
+#include <arch/mmu.h>
 
 ALIGN(STACK_ALIGNMENT)
 char kernel_stack[PLAT_CPU_NUM][KERNEL_STACK_SIZE];
@@ -58,6 +59,8 @@ void main(paddr_t boot_flag)
         /* Init mm */
         mm_init();
         kinfo("[ChCore] mm init finished\n");
+
+        reset_el1_page_table();
 
 #ifdef CHCORE_KERNEL_TEST
         void lab2_test_kmalloc(void);
