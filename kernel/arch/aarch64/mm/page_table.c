@@ -345,7 +345,7 @@ int map_range_in_pgtbl(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                 ptel3 = &(ptpl3->ent[index]);
 
                 if(!IS_PTE_INVALID(ptel3->pte)) {
-                        kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
+                        // kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
                 }
 
                 set_pte_flags(ptel3, flags, ((va + cursor < KBASE)? USER_PTE : KERNEL_PTE));
@@ -360,7 +360,7 @@ int map_range_in_pgtbl(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                                 if(index == PTP_ENTRIES - 1) {
                                         index = GET_L0_INDEX((va + cursor));
                                         if(index == PTP_ENTRIES - 1) {
-                                                kinfo("The mapping exceeds the address space!");
+                                                // kinfo("The mapping exceeds the address space!");
                                                 return -ENOMEM;
                                         }
                                         retval = get_next_ptp(pgtbl, 0, va + cursor + PAGE_SIZE, &ptpl1, &ptel0, true);
@@ -468,7 +468,7 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                 ptel1 = &(ptpl1->ent[index]);
 
                 if(!IS_PTE_INVALID(ptel1->pte)) {
-                        kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
+                        // kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
                 }
 
                 set_pte_flags(ptel1, flags, ((va + cursor < KBASE)? USER_PTE : KERNEL_PTE));
@@ -479,7 +479,7 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                 if(index == PTP_ENTRIES - 1 && cursor + PAGE_SIZE < len) {
                         index = GET_L0_INDEX((va + cursor));
                         if(index == PTP_ENTRIES - 1) {
-                                kinfo("The mapping exceeds the address space!");
+                                // kinfo("The mapping exceeds the address space!");
                                 return -ENOMEM;
                         }
                         retval = get_next_ptp(pgtbl, 0, va + cursor + L1_PAGESIZE, &ptpl1, &ptel0, true);
@@ -499,7 +499,7 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                 ptel2 = &(ptpl2->ent[index]);
 
                 if(!IS_PTE_INVALID(ptel2->pte)) {
-                        kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
+                        // kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
                 }
 
                 set_pte_flags(ptel2, flags, ((va + cursor < KBASE)? USER_PTE : KERNEL_PTE));
@@ -512,7 +512,7 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                         if(index == PTP_ENTRIES - 1) {
                                 index = GET_L0_INDEX((va + cursor));
                                 if(index == PTP_ENTRIES - 1) {
-                                        kinfo("The mapping exceeds the address space!");
+                                        // kinfo("The mapping exceeds the address space!");
                                         return -ENOMEM;
                                 }
                                 retval = get_next_ptp(pgtbl, 0, va + cursor + L2_PAGESIZE, &ptpl1, &ptel0, true);
@@ -537,7 +537,7 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                 ptel3 = &(ptpl3->ent[index]);
 
                 if(!IS_PTE_INVALID(ptel3->pte)) {
-                        kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
+                        // kwarn("The area %d between %d and %d has been mapped", va + cursor, va, va + len);
                 }
 
                 set_pte_flags(ptel3, flags, ((va + cursor < KBASE)? USER_PTE : KERNEL_PTE));
@@ -552,7 +552,7 @@ int map_range_in_pgtbl_huge(void *pgtbl, vaddr_t va, paddr_t pa, size_t len,
                                 if(index == PTP_ENTRIES - 1) {
                                         index = GET_L0_INDEX((va + cursor));
                                         if(index == PTP_ENTRIES - 1) {
-                                                kinfo("The mapping exceeds the address space!");
+                                                // kinfo("The mapping exceeds the address space!");
                                                 return -ENOMEM;
                                         }
                                         retval = get_next_ptp(pgtbl, 0, va + cursor + PAGE_SIZE, &ptpl1, &ptel0, true);
