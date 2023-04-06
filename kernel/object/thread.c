@@ -89,7 +89,7 @@ static u64 load_binary(struct cap_group *cap_group, struct vmspace *vmspace,
         vmr_prop_t flags;
         int i, r;
         size_t seg_sz, seg_map_sz;
-        u64 p_vaddr;
+        u64 p_vaddr, p_vaddr_aligned, p_offset;
 
         int *pmo_cap;
         struct pmobject *pmo;
@@ -108,8 +108,35 @@ static u64 load_binary(struct cap_group *cap_group, struct vmspace *vmspace,
                 if (elf->p_headers[i].p_type == PT_LOAD) {
                         seg_sz = elf->p_headers[i].p_memsz;
                         p_vaddr = elf->p_headers[i].p_vaddr;
+                        p_offset = elf->p_headers[i].p_offset;
                         /* LAB 3 TODO BEGIN */
+                        flags = 0;
+                        if(elf->p_headers[i].p_flags & PF_R)
+                                flags |= VMR_READ;
+                        if(elf->p_headers[i].p_flags & PF_W)
+                                flags |= VMR_WRITE;
+                        if(elf->p_headers[i].p_flags & PF_X)
+                                flags |= VMR_EXEC;
+                        
+                        if(elf->p_headers[i].p_align > 1) {
+                                p_vaddr_aligned = ROUND_DOWN(p_vaddr, PAGE_SIZE);
+                                seg_map_sz = ROUND_UP(p_vaddr + seg_sz, PAGE_SIZE) - p_vaddr_aligned;
+                        } else {
+                                p_vaddr_aligned = p_vaddr;
+                                seg_map_sz = seg_sz;
+                        }
 
+                        pmo_cap[i] = create_pmo(seg_map_sz, PMO_DATA, cap_group, &pmo);
+                        if (pmo_cap[i] < 0) {
+                                ret = pmo_cap[i];
+                                goto out_free_cap;
+                        }
+
+                        memset((void*)phys_to_virt(pmo->start), 0, pmo->size);
+                        memcpy((void*)(phys_to_virt(pmo->start) + (p_vaddr - p_vaddr_aligned)),
+                                bin + p_offset, elf->p_headers[i].p_filesz);
+
+                        ret = vmspace_map_range(vmspace, p_vaddr_aligned, seg_map_sz, flags, pmo);
                         /* LAB 3 TODO END */
                         BUG_ON(ret != 0);
                 }
@@ -399,7 +426,9 @@ void sys_thread_exit(void)
         printk("\nBack to kernel.\n");
 #endif
         /* LAB 3 TODO BEGIN */
-
+        current_thread->thread_ctx->thread_exit_state = TE_EXITING;
+        current_thread->thread_ctx->state = TS_EXIT;
+        current_thread = NULL;
         /* LAB 3 TODO END */
         /* Reschedule */
         sched();
