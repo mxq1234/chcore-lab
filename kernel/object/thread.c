@@ -427,11 +427,11 @@ void sys_thread_exit(void)
 #endif
         /* LAB 3 TODO BEGIN */
         current_thread->thread_ctx->thread_exit_state = TE_EXITING;
-        current_thread->thread_ctx->state = TS_EXIT;
-        current_thread = NULL;
+        current_thread->thread_ctx->sc->budget = 0;
         /* LAB 3 TODO END */
         /* Reschedule */
         sched();
+        unlock_kernel();
         eret_to_thread(switch_context());
 }
 
@@ -465,7 +465,7 @@ int sys_set_affinity(u64 thread_cap, s32 aff)
         }
 
         /* LAB 4 TODO BEGIN */
-
+        thread->thread_ctx->affinity = aff;
         /* LAB 4 TODO END */
         if (thread_cap != -1)
                 obj_put((void *)thread);
@@ -488,7 +488,7 @@ s32 sys_get_affinity(u64 thread_cap)
         if (thread == NULL)
                 return -ECAPBILITY;
         /* LAB 4 TODO BEGIN */
-
+        aff = thread->thread_ctx->affinity;
         /* LAB 4 TODO END */
 
         if (thread_cap != -1)
