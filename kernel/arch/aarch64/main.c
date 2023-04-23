@@ -24,6 +24,7 @@
 #include <machine.h>
 #include <irq/irq.h>
 #include <object/thread.h>
+#include <arch/mmu.h>
 
 ALIGN(STACK_ALIGNMENT)
 char kernel_stack[PLAT_CPU_NUM][KERNEL_STACK_SIZE];
@@ -68,6 +69,8 @@ void main(paddr_t boot_flag)
         mm_init();
         kinfo("[ChCore] mm init finished\n");
 
+        reset_el1_page_table();
+
 #ifdef CHCORE_KERNEL_TEST
         void lab2_test_kmalloc(void);
         lab2_test_kmalloc();
@@ -78,7 +81,7 @@ void main(paddr_t boot_flag)
         /* Init exception vector */
         arch_interrupt_init();
         /* LAB 4 TODO BEGIN */
-
+        timer_init();
         /* LAB 4 TODO END */
         kinfo("[ChCore] interrupt init finished\n");
 
@@ -99,7 +102,7 @@ void main(paddr_t boot_flag)
 #endif
 
         /* LAB 4 TODO BEGIN */
-
+        lock_kernel();
         /* LAB 4 TODO END */
         
         /* Create initial thread here, which use the `init.bin` */
@@ -108,6 +111,9 @@ void main(paddr_t boot_flag)
 
         /* Leave the scheduler to do its job */
         sched();
+
+        unlock_kernel();
+        // kinfo("primary CPU unlock kernel\n");
 
         /* Context switch to the picked thread */
         eret_to_thread(switch_context());
@@ -124,17 +130,21 @@ void secondary_start(void)
         pmu_init();
 
         /* LAB 4 TODO BEGIN: Set the cpu_status */
-
+        cpu_status[cpuid] = cpu_run;
         /* LAB 4 TODO END */
 #ifdef CHCORE_KERNEL_TEST
         run_test();
 #endif
 
         /* LAB 4 TODO BEGIN */
-
+        lock_kernel();
+        timer_init();
         /* LAB 4 TODO END */
 
-        lock_kernel();
+        // kinfo("CPU %d lock kernel!\n", cpuid);
+
         sched();
+        unlock_kernel();
+        // kinfo("CPU %d unlock kernel and will return!\n", cpuid);
         eret_to_thread(switch_context());
 }

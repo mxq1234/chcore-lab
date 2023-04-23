@@ -56,6 +56,7 @@ void init_buddy(struct phys_mem_pool *pool, struct page *start_page,
         /* Put each physical memory page into the free lists. */
         for (page_idx = 0; page_idx < page_num; ++page_idx) {
                 page = start_page + page_idx;
+		// kdebug("page_idx=%ld, page=%lx, vaddr=%lx\n", page_idx, page, page_to_virt(page));
                 buddy_free_pages(pool, page);
         }
 }
@@ -78,6 +79,8 @@ static struct page *get_buddy_chunk(struct phys_mem_pool *pool,
         buddy_chunk_addr = chunk_addr
                            ^ (1UL << (order + BUDDY_PAGE_SIZE_ORDER));
 
+        // kdebug("addr = %d, order = %d, buddy addr = %d\n", chunk_addr, order, buddy_chunk_addr);
+
         /* Check whether the buddy_chunk_addr belongs to pool. */
         if ((buddy_chunk_addr < pool->pool_start_addr)
             || (buddy_chunk_addr
@@ -96,7 +99,34 @@ static struct page *split_page(struct phys_mem_pool *pool, u64 order,
          * Hint: Recursively put the buddy of current chunk into
          * a suitable free list.
          */
+        struct page* buddy;
+        if(order >= BUDDY_MAX_ORDER) {
+                kwarn("expected order %d exceeds max order\n", order);
+                return page;
+        }
 
+        for(;;) {
+                /* Find the chunk that satisfies the order requirement. */
+                if(page->order == order) {
+                        page->allocated = 1;
+                        break;
+                }
+
+                /* Decrease the page order and find its buddy. */
+                page->order--;
+                buddy = get_buddy_chunk(pool, page);
+
+                /* Set buddy's metadata and add it to free list. */
+                if(buddy != NULL) {
+                        buddy->order = page->order;
+                        buddy->allocated = 0;
+                        list_add(&buddy->node, &(pool->free_lists[buddy->order].free_list));
+                        pool->free_lists[buddy->order].nr_free++;
+                }
+                /* Continue to split page recursively. */
+        }
+
+        return page;
         /* LAB 2 TODO 2 END */
 }
 
@@ -107,18 +137,53 @@ struct page *buddy_get_pages(struct phys_mem_pool *pool, u64 order)
          * Hint: Find a chunk that satisfies the order requirement
          * in the free lists, then split it if necessary.
          */
+        struct page* page = NULL;
+        struct list_head* list_node = NULL;
+        int i;
 
+        for(i = order; i < BUDDY_MAX_ORDER; ++i) {
+                if(!pool->free_lists[i].nr_free)        continue;
+
+                /* Get and delete the first node of free list. */
+                list_node = pool->free_lists[i].free_list.next;
+                list_del(list_node);
+                pool->free_lists[i].nr_free--;
+
+                /* Find the page that contains list_node and split it. */
+                page = list_entry(list_node, struct page, node);
+                page = split_page(pool, order, page);
+                break;
+        }
+
+        return page;
         /* LAB 2 TODO 2 END */
 }
 
-static struct page *merge_page(struct phys_mem_pool *pool, struct page *page)
+static inline struct page *merge_page(struct phys_mem_pool *pool, struct page *page)
 {
         /* LAB 2 TODO 2 BEGIN */
         /*
          * Hint: Recursively merge current chunk with its buddy
          * if possible.
          */
+        struct page* buddy_chunk;
+        
+        /* Get buddy chunk and remove it from free list for merging if unallocated. */
+        for(; page->order < BUDDY_MAX_ORDER - 1; ++page->order) {
+                buddy_chunk = get_buddy_chunk(pool, page);
+                if(buddy_chunk == NULL || buddy_chunk->order != page->order
+                        || buddy_chunk->allocated) {
+                        page->allocated = 0;
+                        break;
+                }
+                list_del(&buddy_chunk->node);
+                pool->free_lists[buddy_chunk->order].nr_free--;
 
+                /* Choose the smaller metadata area as merged page's metadata area. */
+                page = MIN(page, buddy_chunk);
+        }
+
+        return page;
         /* LAB 2 TODO 2 END */
 }
 
@@ -129,7 +194,9 @@ void buddy_free_pages(struct phys_mem_pool *pool, struct page *page)
          * Hint: Merge the chunk with its buddy and put it into
          * a suitable free list.
          */
-
+        page = merge_page(pool, page);
+        list_add(&page->node, &(pool->free_lists[page->order].free_list));
+        pool->free_lists[page->order].nr_free++;
         /* LAB 2 TODO 2 END */
 }
 
@@ -182,10 +249,10 @@ u64 get_free_mem_size_from_buddy(struct phys_mem_pool *pool)
                 total_size += list->nr_free * current_order_size;
 
                 /* debug : print info about current order */
-                kdebug("buddy memory chunk order: %d, size: 0x%lx, num: %d\n",
+                /* kdebug("buddy memory chunk order: %d, size: 0x%lx, num: %d\n",
                        order,
                        current_order_size,
-                       list->nr_free);
+                       list->nr_free); */
         }
         return total_size;
 }

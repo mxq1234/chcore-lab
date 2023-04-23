@@ -84,3 +84,12 @@ BEGIN_FUNC(set_ttbr0_el1)
 	ret
 END_FUNC(set_ttbr0_el1)
 
+BEGIN_FUNC(set_ttbr1_el1)
+	msr ttbr1_el1, x0
+	dsb sy
+	tlbi vmalle1is
+	dsb sy
+	isb
+	ret
+END_FUNC(set_ttbr1_el1)
+
