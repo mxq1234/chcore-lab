@@ -134,9 +134,21 @@ int do_complement(char *buf, char *complement, int complement_time)
 	int offset;
 
 	/* LAB 5 TODO BEGIN */
-
+	int fd = open("/", O_RDONLY);
+	ret = getdents(fd, scan_buf, BUFLEN);
+	for (offset = 0; offset < ret; offset += p->d_reclen) {
+		p = (struct dirent *)(scan_buf + offset);
+		get_dent_name(p, complement);
+		if(strcmp(".", complement) != 0 && strcmp("..", complement) != 0)
+			++j;
+		if(j == complement_time) {
+			printf("%s ", complement);
+			r = 0;
+			break;
+		}
+	}
+	close(fd);
 	/* LAB 5 TODO END */
-
 	return r;
 }
 
@@ -166,7 +178,17 @@ char *readline(const char *prompt)
 
 	/* LAB 5 TODO BEGIN */
 	/* Fill buf and handle tabs with do_complement(). */
-
+	if(c == '\t') {
+		complement_time++;
+		ret = do_complement(buf, complement, complement_time);
+	} if(c == '\r' || c == '\n') {
+		printf("\n");
+		buf[i] = '\0';
+		break;
+	} else {
+		printf("%c", c);
+		buf[i++] = c;
+	}
 	/* LAB 5 TODO END */
 	}
 
@@ -183,7 +205,12 @@ void print_file_content(char* path)
 {
 
 	/* LAB 5 TODO BEGIN */
-
+	FILE* f = fopen(path, "r");
+	char buf[32];
+	size_t count = fread(buf, 1, 32, f);
+	buf[count] = '\0';
+	printf("%s", buf);
+	fclose(f);
 	/* LAB 5 TODO END */
 
 }
@@ -193,7 +220,20 @@ void fs_scan(char *path)
 {
 
 	/* LAB 5 TODO BEGIN */
+	char scan_buf[BUFLEN];
+	char name[BUFLEN];
+	int ret, offset;
+	struct dirent* p;
 
+	int fd = open(path, O_RDONLY);
+	ret = getdents(fd, scan_buf, BUFLEN);
+	for (offset = 0; offset < ret; offset += p->d_reclen) {
+		p = (struct dirent *)(scan_buf + offset);
+		get_dent_name(p, name);
+		if(strcmp(".", name) != 0 && strcmp("..", name) != 0)
+			printf("%s ", name);
+	}
+	close(fd);
 	/* LAB 5 TODO END */
 }
 
@@ -226,7 +266,10 @@ int do_cat(char *cmdline)
 int do_echo(char *cmdline)
 {
 	/* LAB 5 TODO BEGIN */
-
+	cmdline += 4;
+	while (*cmdline == ' ')
+		cmdline++;
+	printf("%s", cmdline);
 	/* LAB 5 TODO END */
 	return 0;
 }
@@ -278,7 +321,7 @@ int run_cmd(char *cmdline)
 	int cap = 0;
 	/* Hint: Function chcore_procm_spawn() could be used here. */
 	/* LAB 5 TODO BEGIN */
-
+	chcore_procm_spawn(cmdline, &cap);
 	/* LAB 5 TODO END */
 	return 0;
 }

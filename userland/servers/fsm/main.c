@@ -92,7 +92,9 @@ void fsm_server_dispatch(struct ipc_msg *ipc_msg, u64 client_badge)
 
 	/* You could add code here as you want.*/
 	/* LAB 5 TODO BEGIN */
-
+	struct ipc_struct* icb = NULL;
+	struct ipc_msg* fwd_msg = NULL;
+	struct fs_request* fwd_fr = NULL;
 	/* LAB 5 TODO END */
 
 	spinlock_lock(&fsmlock);
@@ -113,7 +115,114 @@ void fsm_server_dispatch(struct ipc_msg *ipc_msg, u64 client_badge)
 			break;
 
 		/* LAB 5 TODO BEGIN */
-
+		case FS_REQ_OPEN:
+			mpinfo = get_mount_point(fr->open.pathname, strlen(fr->open.pathname));
+			strip_path(mpinfo, fr->open.pathname);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request), 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request));
+			ret = ipc_call(icb, fwd_msg);
+			ipc_destroy_msg(icb, fwd_msg);
+			fsm_set_mount_info_withfd(client_badge, ret, mpinfo);
+			break;
+		case FS_REQ_READ:
+			mpinfo = fsm_get_mount_info_withfd(client_badge, fr->read.fd);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request), 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request));
+			ret = ipc_call(icb, fwd_msg);
+			if(ret > 0)	memcpy((void*)fr, (void*)fwd_fr, ret);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;
+		case FS_REQ_WRITE:
+			mpinfo = fsm_get_mount_info_withfd(client_badge, fr->write.fd);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request) + fr->write.count, 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request) + fr->write.count);
+			ret = ipc_call(icb, fwd_msg);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;
+		case FS_REQ_UNLINK:
+			mpinfo = get_mount_point(fr->unlink.pathname, strlen(fr->unlink.pathname));
+			strip_path(mpinfo, fr->unlink.pathname);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request), 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request));
+			ret = ipc_call(icb, fwd_msg);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;
+		case FS_REQ_RMDIR:
+			mpinfo = get_mount_point(fr->rmdir.pathname, strlen(fr->rmdir.pathname));
+			strip_path(mpinfo, fr->rmdir.pathname);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request), 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request));
+			ret = ipc_call(icb, fwd_msg);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;
+		case FS_REQ_MKDIR:
+			mpinfo = get_mount_point(fr->mkdir.pathname, strlen(fr->mkdir.pathname));
+			strip_path(mpinfo, fr->mkdir.pathname);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request), 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request));
+			ret = ipc_call(icb, fwd_msg);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;
+		case FS_REQ_CLOSE:
+			mpinfo = fsm_get_mount_info_withfd(client_badge, fr->close.fd);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request), 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request));
+			ret = ipc_call(icb, fwd_msg);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;
+		case FS_REQ_CREAT:
+			mpinfo = get_mount_point(fr->creat.pathname, strlen(fr->creat.pathname));
+			strip_path(mpinfo, fr->creat.pathname);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request), 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request));
+			ret = ipc_call(icb, fwd_msg);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;	
+		case FS_REQ_GET_SIZE:
+			mpinfo = get_mount_point(fr->getsize.pathname, strlen(fr->getsize.pathname));
+			strip_path(mpinfo, fr->getsize.pathname);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request), 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request));
+			ret = ipc_call(icb, fwd_msg);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;
+		case FS_REQ_GETDENTS64:
+			mpinfo = fsm_get_mount_info_withfd(client_badge, fr->getdents64.fd);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, 512, 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, 512);
+			ret = ipc_call(icb, fwd_msg);
+			if(ret >= 0)	memcpy(fr, fwd_fr, ret);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;
+		case FS_REQ_LSEEK: /*LSEEK is handled in fs_wrapper_ops.*/
+			mpinfo = fsm_get_mount_info_withfd(client_badge, fr->lseek.fd);
+			icb = mpinfo->_fs_ipc_struct;
+			fwd_msg = ipc_create_msg(icb, sizeof(struct fs_request), 0);
+			fwd_fr = (struct fs_request*)ipc_get_msg_data(fwd_msg);
+			memcpy(fwd_fr, fr, sizeof(struct fs_request));
+			ret = ipc_call(icb, fwd_msg);
+			ipc_destroy_msg(icb, fwd_msg);
+			break;
 		/* LAB 5 TODO END */
 
 		default:

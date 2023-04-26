@@ -22,7 +22,7 @@
 #include "../fs_base/falloc.h"
 #include "tmpfs.h"
 
-
+int fs_creat(const char *path);
 
 int tmpfs_open(char *path, int flags, int mode, unsigned long *vnode_id, size_t *vnode_size, int *vnode_type, void **vnode_private)
 {
@@ -32,13 +32,37 @@ int tmpfs_open(char *path, int flags, int mode, unsigned long *vnode_id, size_t 
 	BUG_ON(!path);
 	BUG_ON(*path != '/');
 
-	inode = tfs_open_path((const char *)path);
-	if (inode) {
-		*vnode_id = (unsigned long)inode;
-		*vnode_type = inode->type == FS_REG ? FS_NODE_REG : FS_NODE_DIR;
-		*vnode_size = inode->size;
-		*vnode_private = inode;
-		ret = 0;
+	if(flags == O_RDONLY) {
+		inode = tfs_open_path((const char *)path);
+		if (inode) {
+			*vnode_id = (unsigned long)inode;
+			*vnode_type = inode->type == FS_REG ? FS_NODE_REG : FS_NODE_DIR;
+			*vnode_size = inode->size;
+			*vnode_private = inode;
+			ret = 0;
+		}
+	} else if(flags == O_WRONLY) {
+		inode = tfs_open_path((const char *)path);
+		if(inode) {
+			inode->size = 0;
+			*vnode_id = (unsigned long)inode;
+			*vnode_type = inode->type == FS_REG ? FS_NODE_REG : FS_NODE_DIR;
+			*vnode_size = inode->size;
+			*vnode_private = inode;
+			ret = 0;
+		} else {
+			if(fs_creat(path) == 0) {
+				inode = tfs_open_path((const char *)path);
+				if(inode) {
+					inode->size = 0;
+					*vnode_id = (unsigned long)inode;
+					*vnode_type = inode->type == FS_REG ? FS_NODE_REG : FS_NODE_DIR;
+					*vnode_size = inode->size;
+					*vnode_private = inode;
+					ret = 0;
+				}
+			}
+		}
 	}
 	return ret;
 	
@@ -77,10 +101,16 @@ int fs_creat(const char *path)
 	BUG_ON(*path != '/');
 
 	/* LAB 5 TODO BEGIN */
-
+	err = tfs_namex(&dirat, &leaf, true);
+	if (err)
+		return err;
+	if (dirat->type != FS_DIR)
+		return -ENOTDIR;
+	err = tfs_creat(dirat, leaf, strlen(leaf));
+	if (err)
+		return err;
 	/* LAB 5 TODO END */
 	return 0;
-
 }
 
 int tmpfs_creat(struct ipc_msg *ipc_msg, struct fs_request *fr)
@@ -99,7 +129,14 @@ int tmpfs_unlink(const char *path, int flags)
 	BUG_ON(*path != '/');
 
 	/* LAB 5 TODO BEGIN */
-
+	err = tfs_namex(&dirat, &leaf, false);
+	if (err)
+		return err;
+	if (dirat->type != FS_DIR)
+		return -ENOTDIR;
+	err = tfs_remove(dirat, leaf, strlen(leaf));
+	if (err)
+		return err;
 	/* LAB 5 TODO END */
 	return err;
 }
@@ -119,7 +156,14 @@ int tmpfs_mkdir(const char *path, mode_t mode)
 	BUG_ON(*path != '/');
 
 	/* LAB 5 TODO BEGIN */
-
+	err = tfs_namex(&dirat, &leaf, true);
+	if (err)
+		return err;
+	if (dirat->type != FS_DIR)
+		return -ENOTDIR;
+	err = tfs_mkdir(dirat, leaf, strlen(leaf));
+	if (err)
+		return err;
 	/* LAB 5 TODO END */
 	return err;
 }
