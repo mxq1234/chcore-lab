@@ -50,7 +50,11 @@ void handle_entry_c(int type, u64 esr, u64 address)
 {
         /* Acquire the big kernel lock, if the exception is not from kernel */
         /* LAB 4 TODO BEGIN */
-
+        bool is_locked = false;
+        if(type == SYNC_EL0_64 || type == SYNC_EL0_32) {
+                lock_kernel();
+                is_locked = true;
+        }
         /* LAB 4 TODO END */
 
         /* ec: exception class */
@@ -78,7 +82,7 @@ void handle_entry_c(int type, u64 esr, u64 address)
                 break;
         case ESR_EL1_EC_WFI_WFE:
                 kdebug("Trapped WFI or WFE instruction execution\n");
-                return;
+                goto unlock_before_ret;
         case ESR_EL1_EC_ENFP:
                 kdebug("Access to SVE, Advanced SIMD, or floating-point functionality\n");
                 break;
@@ -100,7 +104,7 @@ void handle_entry_c(int type, u64 esr, u64 address)
                  * dynamic loading can trigger faults here.
                  */
                 do_page_fault(esr, address);
-                return;
+                goto unlock_before_ret;
         case ESR_EL1_EC_IABT_CEL:
                 kinfo("Instruction Abort from current Exception level\n");
                 break;
@@ -113,11 +117,11 @@ void handle_entry_c(int type, u64 esr, u64 address)
                  * We only consider page faults for now.
                  */
                 do_page_fault(esr, address);
-                return;
+                goto unlock_before_ret;
         case ESR_EL1_EC_DABT_CEL:
                 kdebug("Data Abort from a current Exception level\n");
                 do_page_fault(esr, address);
-                return;
+                goto unlock_before_ret;
         case ESR_EL1_EC_SP_ALIGN:
                 kdebug("SP alignment fault exception\n");
                 break;
@@ -143,6 +147,11 @@ void handle_entry_c(int type, u64 esr, u64 address)
               esr_ec);
 
         BUG_ON(1);
+
+unlock_before_ret:
+        if(is_locked)
+                unlock_kernel();
+        return;
 }
 
 /* Interrupt handler for interrupts happening when in EL0. */
@@ -154,15 +163,22 @@ void handle_irq(int type)
          *	The irq is not from the kernel
          * 	The thread being interrupted is an idle thread.
          */
+        bool is_locked = false;
         if (type >= SYNC_EL0_64
             || current_thread->thread_ctx->type == TYPE_IDLE) {
                 /* LAB 4 TODO BEGIN */
-
+                lock_kernel();
+                is_locked = true;
                 /* LAB 4 TODO END */
         }
 
         plat_handle_irq();
         sched();
+
+        if (is_locked)
+                unlock_kernel();
+
+        // kinfo("eret_to_thread after irq\n");       
         eret_to_thread(switch_context());
 }
 

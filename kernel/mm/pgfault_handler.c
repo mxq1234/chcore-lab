@@ -34,6 +34,7 @@ int handle_trans_fault(struct vmspace *vmspace, vaddr_t fault_addr)
         u64 offset;
         u64 index;
         int ret = 0;
+        vaddr_t kva;
 
         vmr = find_vmr_for_va(vmspace, fault_addr);
         if (vmr == NULL) {
@@ -67,13 +68,23 @@ int handle_trans_fault(struct vmspace *vmspace, vaddr_t fault_addr)
 
                 fault_addr = ROUND_DOWN(fault_addr, PAGE_SIZE);
                 /* LAB 3 TODO BEGIN */
-
+                pa = get_page_from_pmo(pmo, index);
                 /* LAB 3 TODO END */
                 if (pa == 0) {
                         /* Not committed before. Then, allocate the physical
                          * page. */
                         /* LAB 3 TODO BEGIN */
-
+                        kva = (vaddr_t)get_pages(0);
+                        if(kva == 0) {
+                                // kwarn("[OOM] Cannot get page from any memory pool!\n");
+                                return -ENOMEM;
+                        }
+                        commit_page_to_pmo(pmo, index, virt_to_phys(kva));
+                        ret = map_range_in_pgtbl(vmspace->pgtbl, fault_addr, virt_to_phys(kva), PAGE_SIZE, perm);
+                        if(ret < 0) {
+                                // kwarn("Cannot map vaddr %lx to paddr %lx!\n", fault_addr, virt_to_phys(kva));
+                        }
+                        
                         /* LAB 3 TODO END */
 #ifdef CHCORE_LAB3_TEST
                         printk("Test: Test: Successfully map for pa 0\n");
@@ -101,7 +112,10 @@ int handle_trans_fault(struct vmspace *vmspace, vaddr_t fault_addr)
                          * Repeated mapping operations are harmless.
                          */
                         /* LAB 3 TODO BEGIN */
-
+                        ret = map_range_in_pgtbl(vmspace->pgtbl, fault_addr, pa, PAGE_SIZE, perm);
+                        if(ret < 0) {
+                                // kwarn("Cannot map vaddr %lx to paddr %lx!\n", fault_addr, virt_to_phys(kva));
+                        }
                         /* LAB 3 TODO END */
 #ifdef CHCORE_LAB3_TEST
                         printk("Test: Test: Successfully map for pa not 0\n");
