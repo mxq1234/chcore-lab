@@ -467,30 +467,74 @@ int sd_Read(void *pBuffer, size_t nCount)
 {
 	/* LAB 6 TODO BEGIN */
     /* BLANK BEGIN */
+	if(pBuffer == NULL) {
+		return -1;
+	}
+	if(nCount % SD_BLOCK_SIZE != 0){
+		printf("nCount is not a multiple of SD_BLOCK_SIZE\n");
+		return -1;
+	}
+	char* p = (char*)pBuffer;
+	u64 startLba = m_ullOffset / SD_BLOCK_SIZE;
+	u64 endLba = (m_ullOffset + nCount) / SD_BLOCK_SIZE;
+	int ret = 0;
+
+	for(u64 i = startLba; i < endLba; i++){
+		if (DoRead(p, SD_BLOCK_SIZE, i) != 0) {
+			return -1;
+		}
+		p += SD_BLOCK_SIZE;
+		ret += SD_BLOCK_SIZE;
+	}
+	m_ullOffset += nCount;
 
     /* BLANK END */
     /* LAB 6 TODO END */
-	return -1;
+	return 0;
 }
 
 int sd_Write(const void *pBuffer, size_t nCount)
 {
 	/* LAB 6 TODO BEGIN */
     /* BLANK BEGIN */
+	if(pBuffer == NULL) {
+		return -1;
+	}
+	if(nCount % SD_BLOCK_SIZE != 0){
+		printf("nCount is not a multiple of SD_BLOCK_SIZE\n");
+		return -1;
+	}
+	char* p = (char*)pBuffer;
+	u64 startLba = m_ullOffset / SD_BLOCK_SIZE;
+	u64 endLba = (m_ullOffset + nCount) / SD_BLOCK_SIZE;
+	int ret = 0;
+
+	for(u64 i = startLba; i < endLba; i++){
+		if (DoWrite(p, SD_BLOCK_SIZE, i) != 0) {
+			return -1;
+		}
+		p += SD_BLOCK_SIZE;
+		ret += SD_BLOCK_SIZE;
+	}
+	m_ullOffset += nCount;
 
     /* BLANK END */
     /* LAB 6 TODO END */
-	return -1;
+	return 0;
 }
 
 u64 Seek(u64 ullOffset)
 {
 	/* LAB 6 TODO BEGIN */
     /* BLANK BEGIN */
-
+	if(ullOffset % SD_BLOCK_SIZE != 0){
+		printf("Seek offset must be a multiple of SD_BLOCK_SIZE\n");
+		return -1;
+	}
+	m_ullOffset = ullOffset;
     /* BLANK END */
     /* LAB 6 TODO END */
-	return -1;
+	return 0;
 }
 
 int PowerOn(void)
@@ -1504,7 +1548,19 @@ int DoDataCommand(int is_write, u8 * buf, size_t buf_size, u32 block_no)
 	// LAB6 TODO: judge the type of the command
 	/* LAB 6 TODO BEGIN */
     /* BLANK BEGIN */
-
+	if (is_write) {
+		if(m_blocks_to_transfer == 1) {
+			command = WRITE_BLOCK;
+		} else {
+			command = WRITE_MULTIPLE_BLOCK;
+		}
+	} else {
+		if(m_blocks_to_transfer == 1) {
+			command = READ_SINGLE_BLOCK;
+		} else {
+			command = READ_MULTIPLE_BLOCK;
+		}
+	}
     /* BLANK END */
     /* LAB 6 TODO END */
 
@@ -1538,7 +1594,10 @@ int DoRead(u8 * buf, size_t buf_size, u32 block_no)
 {
 	/* LAB 6 TODO BEGIN */
     /* BLANK BEGIN */
-
+	if (DoDataCommand(0, buf, buf_size, block_no) == 0) {
+		return 0;
+	}
+	
     /* BLANK END */
     /* LAB 6 TODO END */
 	return -1;
@@ -1548,7 +1607,9 @@ int DoWrite(u8 * buf, size_t buf_size, u32 block_no)
 {
 	/* LAB 6 TODO BEGIN */
     /* BLANK BEGIN */
-
+	if (DoDataCommand(1, buf, buf_size, block_no) == 0) {
+		return 0;
+	}
     /* BLANK END */
     /* LAB 6 TODO END */
 	return -1;

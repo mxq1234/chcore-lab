@@ -321,7 +321,16 @@ int run_cmd(char *cmdline)
 	int cap = 0;
 	/* Hint: Function chcore_procm_spawn() could be used here. */
 	/* LAB 5 TODO BEGIN */
-	chcore_procm_spawn(cmdline, &cap);
+	int pid = chcore_procm_spawn(cmdline, &cap);
+	if(pid < 0) {
+		printf("run_cmd: spawn failed\n");
+		return -1;
+	}
+	int ret = chcore_procm_waitpid(pid);
+	if(ret < 0) {
+		printf("run_cmd: waitpid failed\n");
+		return -1;
+	}
 	/* LAB 5 TODO END */
 	return 0;
 }

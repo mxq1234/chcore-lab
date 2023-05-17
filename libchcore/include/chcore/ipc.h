@@ -46,7 +46,7 @@ struct ipc_vm_config {
 #define CLIENT_BUF_SIZE   0x1000
 
 #define MAX_CLIENT        32
-#define RETRY_UPPER_BOUND 100
+#define RETRY_UPPER_BOUND 10000000
 
 /*
  * server_handler is an IPC routine (can have two arguments):
