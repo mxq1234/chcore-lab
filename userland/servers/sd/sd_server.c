@@ -28,7 +28,7 @@ static int sdcard_readblock(int lba, char *buffer)
 {
 	/* LAB 6 TODO BEGIN */
 	/* BLANK BEGIN */
-	if(DoRead(buffer, BLOCK_SIZE, lba) < 0) {
+	if(DoRead((u8*)buffer, BLOCK_SIZE, lba) < 0) {
 		return -1;
 	}
 	/* BLANK END */
@@ -36,11 +36,11 @@ static int sdcard_readblock(int lba, char *buffer)
 	return 0;
 }
 
-static int sdcard_writeblock(int lba, const char *buffer)
+static int sdcard_writeblock(int lba, char *buffer)
 {
 	/* LAB 6 TODO BEGIN */
 	/* BLANK BEGIN */
-	if(DoWrite(buffer, BLOCK_SIZE, lba) < 0) {
+	if(DoWrite((u8*)buffer, BLOCK_SIZE, lba) < 0) {
 		return -1;
 	}
 	/* BLANK END */
