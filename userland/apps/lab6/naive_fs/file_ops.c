@@ -338,14 +338,14 @@ int naive_fs_creat(const char *name)
         return -1;
     }
 
+    if(naive_fs_lookup(name) >= 0) {
+        printf("File already exists\n");
+        return -1;
+    }
+    
     int new_inode = naive_fs_alloc_inode();
     if(new_inode < 0) {
         printf("Alloc inode failed\n");
-        return -1;
-    }
-
-    if(naive_fs_lookup(name) >= 0) {
-        printf("File already exists\n");
         return -1;
     }
     
@@ -435,7 +435,15 @@ int naive_fs_pwrite(const char *name, int offset, int size, const char *buffer)
     int inode_block = naive_fs_lookup(name);
     if(inode_block < 0) {
         printf("File not found\n");
-        return -1;
+        if(naive_fs_creat(name) < 0) {
+            printf("Create file failed\n");
+            return -1;
+        }
+        inode_block = naive_fs_lookup(name);
+        if(inode_block < 0) {
+            printf("File not found\n");
+            return -1;
+        }
     }
 
     struct inode inode;
